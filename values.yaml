@@ -1,0 +1,218 @@
+hub:
+  config:
+    GitHubOAuthenticator:
+      allowed_organizations:
+        - eco4cast
+      scope:
+        - read:org
+      oauth_callback_url: https://eco4cast.nrp-nautilus.io/hub/oauth_callback
+    KubeSpawner:
+      k8s_api_request_timeout: 600
+      environment:
+        SHELL: /usr/bin/bash
+        AWS_S3_ENDPOINT: "rook-ceph-rgw-nautiluss3.rook"
+        AWS_HTTPS: "false"
+        AWS_PUBLIC_ENDPOINT: "s3-west.nrp-nautilus.io"
+    JupyterHub:
+      admin_access: true
+      admin_users: 
+        - cboettig
+      # set to github or cilogon
+      authenticator_class: github
+  image:
+    name: quay.io/yuvipanda/z2jh-hub-with-fancy-profiles
+    tag: z2jh-v4.0.0-fancy-profiles-sha-2ad902d
+  extraConfig:
+    01-enable-fancy-profiles: |
+      from jupyterhub_fancy_profiles import setup_ui
+      setup_ui(c)
+  service:
+    type: ClusterIP
+    annotations: {}
+    ports:
+      nodePort:
+    loadBalancerIP:
+  deploymentStrategy:
+    type: Recreate
+  db:
+    type: sqlite-pvc
+    pvc:
+      accessModes:
+        - ReadWriteOnce
+      storage: 10Gi
+      storageClassName: rook-ceph-block 
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 2 
+      memory: 512Mi
+  networkPolicy:
+    enabled: false
+proxy:
+  service:
+    type: ClusterIP
+  chp:
+    resources:
+      limits:
+        cpu: "10"
+        memory: 10Gi
+      requests:
+        cpu: "2"
+        memory: 512Mi
+singleuser:
+  startTimeout: 3600
+  uid: 0
+  fsGid: 100
+  lifecycleHooks:
+    postStart:
+      exec:
+        command: ["/bin/bash", "-c", "if [ -f '/opt/share/start.sh' ]; then /bin/bash '/opt/share/start.sh'; fi"]
+#  extraEnv:
+#    GRANT_SUDO: "yes"
+  extraPodConfig:
+    securityContext:
+        fsGroupChangePolicy: "OnRootMismatch"
+        fsGroup: 100
+  extraNodeAffinity:
+    required:
+      - matchExpressions:
+        - 'key': 'topology.kubernetes.io/region'
+          'operator': 'In'
+          'values': ["us-west"]
+  extraResource:
+    limits:
+      ephemeral-storage: "20Gi"
+    guarantees:
+      ephemeral-storage: "20Gi"
+  cloudMetadata:
+    blockWithIptables: false
+  networkPolicy:
+    enabled: false
+  storage:
+    type: none
+    #type: dynamic 
+    #    extraLabels: {}
+    #extraVolumes: []
+    #extraVolumeMounts: []
+    #capacity: 10Gi
+    #homeMountPath: /home/jovyan
+    #dynamic:
+    #  storageClass: rook-ceph-block
+    #  pvcNameTemplate: claim-{username}{servername}
+    #  volumeNameTemplate: volume-{username}{servername}
+    #  storageAccessModes: [ReadWriteOnce]
+  image:
+    pullPolicy: Always
+  startTimeout: 3600
+  cpu:
+    limit: 10
+    guarantee: 1
+  memory:
+    limit: 10G
+    guarantee: 10G
+  cmd: null
+  defaultUrl: "/lab"
+  profileList:
+  - display_name: "Choose your environment and resources"
+    default: true
+    profile_options:
+      01-image:
+        display_name: Environment
+        # Dynamic image building requires binderhub
+        dynamic_image_building:
+          enabled: False
+        unlisted_choice:
+          enabled: True
+          display_name: "Custom image"
+          description: Specify your own docker image (must have python and jupyterhub installed in it)
+          validation_regex: "^.+:.+$"
+          validation_message: "Must be a publicly available docker image, of form <image-name>:<tag>"
+          kubespawner_override:
+            image: "{value}"
+        choices:
+          01-cpu:
+            display_name: CPU 
+            description: General purpose Python + R environment 
+            kubespawner_override:
+              image:  "gitlab-registry.nrp-nautilus.io/cboettig/binder:latest"
+          02-gpu:
+            display_name: GPU
+            description: CUDA environment
+            kubespawner_override:
+              image: "ghcr.io/rocker-org/cuda:latest"
+              extra_resource_limits:
+                nvidia.com/gpu: "1"
+      02-ide:
+        display_name: IDE
+        choices:
+          lab:
+            display_name: Jupyter
+            kubespawner_override:
+              default_url: /lab
+          vscode:
+            display_name: VSCode
+            kubespawner_override:
+              default_url: /vscode
+          rstudio:
+            display_name: RStudio
+            kubespawner_override:
+              default_url: /rstudio
+      03-resource_allocation:
+        display_name: Resource Allocation
+        choices:
+          mem_8:
+            display_name: 8 GB RAM, 2 CPU
+            kubespawner_override:
+              mem_guarantee: 8G
+              mem_limit: 8G
+              cpu_request: 2
+              cpu_limit: 2
+            default: true
+          mem_16:
+            display_name: 16 GB RAM, 4 CPU
+            kubespawner_override:
+              mem_guarantee: 16G
+              mem_limit: 16G
+              cpu_request: 4
+              cpu_limit: 4
+          mem_32:
+            display_name: 32 GB RAM, 16 CPU
+            kubespawner_override:
+              mem_guarantee: 32G
+              mem_limit: 32G
+              cpu_request: 16
+              cpu_limit: 16
+
+scheduling:
+  userScheduler:
+    enabled: false
+  userPlaceholder:
+    enabled: false
+# prePuller relates to the hook|continuous-image-puller DaemonsSets
+prePuller:
+  hook:
+    enabled: false 
+  continuous:
+    enabled: false
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: haproxy
+  hosts: ["eco4cast.nrp-nautilus.io"]
+  pathSuffix: ''
+  tls:
+    - hosts:
+      - eco4cast.nrp-nautilus.io
+
+cull:
+  enabled: true
+  users: true 
+  removeNamedServers: true
+  timeout: 3600
+  every: 6000
+  concurrency: 10
+  maxAge: 0
+

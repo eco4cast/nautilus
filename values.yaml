@@ -126,7 +126,8 @@ singleuser:
         unlisted_choice:
           enabled: True
           display_name: "Custom image"
-          description: Specify your own docker image (must have python and jupyterhub installed in it)
+          display_name_in_choices: "Specify an existing docker image"
+          description_in_choices: "Use a pre-existing docker image from a public docker registry"
           validation_regex: "^.+:.+$"
           validation_message: "Must be a publicly available docker image, of form <image-name>:<tag>"
           kubespawner_override:
